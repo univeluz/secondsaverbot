@@ -1,18 +1,75 @@
 services:
+  warp:
+    image: monius/docker-warp-socks
+    container_name: warp
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+
   youtubedlbot:
     image: youtubedlbot
     build:
       context: .
       dockerfile: ./Dockerfile
+
     env_file:
       - .env
+
     volumes:
-      - ./videos:/app/src/videos
+      - videos:/app/src/videos
+
+    restart: unless-stopped
+    stop_signal: SIGINT
+
+    depends_on:
+      redis_cache:
+        condition: service_healthy
+      warp:
+        condition: service_started
+
+  redis_cache:
+    image: redis:7-alpine
+    container_name: redis_cache
+
+    restart: unless-stopped
+
+    command: >
+      redis-server
+      --port 6379
+      --save 20 1
+      --loglevel warning
+      --requirepass ${REDIS_PASSWORD}
+
+    env_file:
+      - .env
+
+    volumes:
+      - cache:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   nginx:
     image: nginx:alpine
+
     ports:
       - "8081:80"
+
     volumes:
-      - ./videos:/usr/share/nginx/html/files:ro
+      - videos:/usr/share/nginx/html/files:ro
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+    restart: unless-stopped
+
+    depends_on:
+      - youtubedlbot
+
+volumes:
+  cache:
+  videos:

@@ -73,7 +73,37 @@ def format_message(
     return "\n".join(lines)
 
 
+from aiogram import types, exceptions
+import aiohttp
+
+async def download_tiktok_video(msg: types.Message, url: str):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"https://www.tikwm.com/api/?url={url}",
+            headers={'User-Agent': 'Mozilla/5.0'}
+        ) as resp:
+            data = await resp.json()
+            
+        if data.get("code") != 0 or "data" not in data:
+            raise Exception("Failed to fetch TikTok data")
+            
+        video_url = data["data"]["play"]
+        
+    try:
+        await msg.edit_text(format_message(ProgressState.FINALIZING))
+    except exceptions.TelegramBadRequest:
+        pass
+    
+    return {
+        "filename": video_url,
+        "width": 0,
+        "height": 0
+    }
+
 async def download_video(msg: types.Message, url: str):
+    if "tiktok.com" in url.lower():
+        return await download_tiktok_video(msg, url)
+
     loop = asyncio.get_running_loop()
     last_update = [0.0]
     progress = [0.0]
