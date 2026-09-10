@@ -31,16 +31,20 @@ async def handle_standart_download(message: types.Message):
         info = await download_video(msg, url)
         filename = info["filename"]
 
-        if os.path.getsize(filename) > MAX_TELEGRAM_SIZE:
-            await msg.edit_text(
-                VideoStatusMessages.VideoHostRedirect.value.format(
-                    download_url=f"{FILES_URL}/{os.path.basename(filename)}"
+        if filename.startswith("http://") or filename.startswith("https://"):
+            video_input = types.URLInputFile(filename)
+        else:
+            if os.path.getsize(filename) > MAX_TELEGRAM_SIZE:
+                await msg.edit_text(
+                    VideoStatusMessages.VideoHostRedirect.value.format(
+                        download_url=f"{FILES_URL}/{os.path.basename(filename)}"
+                    )
                 )
-            )
-            return
+                return
+            video_input = types.FSInputFile(filename)
 
         await message.answer_video(
-            video=types.FSInputFile(filename),
+            video=video_input,
             caption=(VideoStatusMessages.Caption.value.format(url=url)),
             width=info["width"],
             height=info["height"],
