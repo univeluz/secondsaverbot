@@ -13,12 +13,13 @@ class Links(Enum):
         "https://vt.tiktok.com/",
         "https://vm.tiktok.com/",
         # Instagram
-        "https://www.instagram.com/reel/",
-        "https://instagram.com/reel/",
-        "https://www.instagram.com/share/",
-        # Twitter (X)
+        "https://www.instagram.com/",
+        "https://instagram.com/",
+        # Twitter (X) — desktop + mobile
         "https://x.com/",
         "https://twitter.com/",
+        "https://mobile.twitter.com/",
+        "https://mobile.x.com/",
         # Facebook
         "https://www.facebook.com/reel/",
         "https://www.facebook.com/share/",

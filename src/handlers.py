@@ -13,7 +13,8 @@ from utils import VIDEOS_DIR, download_video, format_bytes, format_message
 router = Router()
 load_dotenv()
 
-MAX_TELEGRAM_SIZE = 50 * 1024 * 1024
+# Local Bot API supports up to 2000 MB (2 GB)
+MAX_TELEGRAM_SIZE = 2000 * 1024 * 1024
 FILES_URL = os.getenv("FILES_URL")
 
 
@@ -30,6 +31,11 @@ async def handle_standart_download(message: types.Message):
     try:
         info = await download_video(msg, url)
         filename = info["filename"]
+        duration = info.get("duration", 0)
+
+        thumb_input = None
+        if info.get("thumbnail") and os.path.exists(info["thumbnail"]):
+            thumb_input = types.FSInputFile(info["thumbnail"])
 
         if filename.startswith("http://") or filename.startswith("https://"):
             video_input = types.URLInputFile(filename)
@@ -48,7 +54,15 @@ async def handle_standart_download(message: types.Message):
             caption=(VideoStatusMessages.Caption.value.format(url=url)),
             width=info["width"],
             height=info["height"],
+            duration=duration,
+            thumbnail=thumb_input
         )
+        
+        if info.get("thumbnail") and os.path.exists(info["thumbnail"]):
+            try:
+                os.remove(info["thumbnail"])
+            except:
+                pass
     except exceptions.TelegramEntityTooLarge:
         if filename:
             await message.answer(
@@ -66,7 +80,7 @@ async def handle_standart_download(message: types.Message):
 
 @router.message(Command("stats"))
 async def stats(message: types.Message):
-    if message.from_user.id != int(os.getenv("ADMIN_ID")):
+    if message.from_user.id != int(os.getenv("ADMIN_ID", 0)):
         return
 
     counts = {}
@@ -102,7 +116,7 @@ async def stats(message: types.Message):
 
 @router.message(Command("clean"))
 async def clean(message: types.Message):
-    if message.from_user.id != int(os.getenv("ADMIN_ID")):
+    if message.from_user.id != int(os.getenv("ADMIN_ID", 0)):
         return
 
     deleted = 0
