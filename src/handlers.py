@@ -1,3 +1,5 @@
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardButton
 from cache import get_cached_video, cache_video
 import logging
 import os
@@ -22,30 +24,48 @@ FILES_URL = os.getenv("FILES_URL")
 @router.message(F.text.startswith(tuple(Links.STANDART.value)))
 async def handle_standart_download(message: types.Message):
     filename = None
-    url = message.text
+    url = message.text.strip()
     if not url:
         return
 
     await message.react([types.reaction_type_emoji.ReactionTypeEmoji(emoji="👀")])
+
+    # 1. Check Redis cache for instant 0.5s response
+    cached = await get_cached_video(url)
+    if cached and cached.get("file_id"):
+        caption = VideoStatusMessages.Caption.value.format(url=url)
+        if cached.get("resolution"):
+            caption += f"\n🎬 Sifat: {cached.get('resolution')}"
+        await message.answer_video(
+            video=cached["file_id"],
+            caption=caption,
+            width=cached.get("width", 0),
+            height=cached.get("height", 0),
+            duration=cached.get("duration", 0),
+        )
+        await message.delete()
+        return
+
+    # For long YouTube videos, provide quality selector buttons or download directly
+    is_yt = any(domain in url.lower() for domain in ["youtube.com", "youtu.be"])
+    if is_yt and not ("/shorts/" in url.lower()):
+        # Quick inline keyboard for Quality
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="⚡ Tezkor 360p (Kichik hajm)", callback_data=f"dl:360:{url}"),
+            InlineKeyboardButton(text="💎 720p HD (Maksimal)", callback_data=f"dl:720:{url}")
+        )
+        await message.answer(
+            f"🎬 <b>Video sifatini tanlang:</b>\n<code>{url}</code>",
+            reply_markup=builder.as_markup()
+        )
+        return
+
     msg = await message.answer(format_message(ProgressState.PREPARING))
 
     try:
-        # 1. Check Redis cache for instant 0.5s response
-        cached = await get_cached_video(url)
-        if cached and cached.get("file_id"):
-            await message.answer_video(
-                video=cached["file_id"],
-                caption=(VideoStatusMessages.Caption.value.format(url=url)),
-                width=cached.get("width", 0),
-                height=cached.get("height", 0),
-                duration=cached.get("duration", 0),
-            )
-            await msg.delete()
-            await message.delete()
-            return
-
-        # 2. Fresh download
-        info = await download_video(msg, url)
+        # Fresh download (default 720p)
+        info = await download_video(msg, url, quality="720")
         filename = info["filename"]
         duration = info.get("duration", 0)
 
@@ -63,7 +83,6 @@ async def handle_standart_download(message: types.Message):
                     )
                 )
                 return
-            # Use 4MB chunk size for ultra-fast pipe to local telegram-bot-api
             video_input = types.FSInputFile(filename, chunk_size=4 * 1024 * 1024)
 
         sent_msg = await message.answer_video(
@@ -75,14 +94,20 @@ async def handle_standart_download(message: types.Message):
             thumbnail=thumb_input
         )
 
-        # 3. Cache the sent video file_id in Redis
+        # 3. Cache the sent video file_id AND complete format metadata in Redis
         if sent_msg and sent_msg.video:
             await cache_video(
                 url=url,
                 file_id=sent_msg.video.file_id,
-                width=info["width"],
-                height=info["height"],
-                duration=duration
+                width=info.get("width", 0),
+                height=info.get("height", 0),
+                duration=duration,
+                format_id=info.get("format_id"),
+                resolution=f"{info.get('width', 0)}x{info.get('height', 0)}",
+                filesize=info.get("filesize"),
+                vcodec=info.get("vcodec"),
+                acodec=info.get("acodec"),
+                ext=info.get("ext", "mp4")
             )
         
         if info.get("thumbnail") and os.path.exists(info["thumbnail"]):
@@ -103,6 +128,84 @@ async def handle_standart_download(message: types.Message):
     else:
         await msg.delete()
         await message.delete()
+
+
+@router.callback_query(F.data.startswith("dl:"))
+async def handle_quality_choice(callback: types.CallbackQuery):
+    _, quality, url = callback.data.split(":", 2)
+    message = callback.message
+    await callback.answer(f"Tanlandi: {quality}p sifat")
+    msg = await message.edit_text(format_message(ProgressState.PREPARING))
+
+    try:
+        # Check cache for this specific quality or general
+        cached = await get_cached_video(f"{url}#{quality}")
+        if not cached:
+            cached = await get_cached_video(url)
+            # Only use if matching quality or resolution
+            if cached and quality not in str(cached.get("resolution", "")):
+                cached = None
+
+        if cached and cached.get("file_id"):
+            caption = VideoStatusMessages.Caption.value.format(url=url)
+            if cached.get("resolution"):
+                caption += f"\n🎬 Sifat: {cached.get('resolution')}"
+            await callback.bot.send_video(
+                chat_id=callback.from_user.id,
+                video=cached["file_id"],
+                caption=caption,
+                width=cached.get("width", 0),
+                height=cached.get("height", 0),
+                duration=cached.get("duration", 0),
+            )
+            await msg.delete()
+            return
+
+        info = await download_video(msg, url, quality=quality)
+        filename = info["filename"]
+        duration = info.get("duration", 0)
+
+        thumb_input = None
+        if info.get("thumbnail") and os.path.exists(info["thumbnail"]):
+            thumb_input = types.FSInputFile(info["thumbnail"])
+
+        video_input = types.FSInputFile(filename, chunk_size=4 * 1024 * 1024)
+
+        sent_msg = await callback.bot.send_video(
+            chat_id=callback.from_user.id,
+            video=video_input,
+            caption=(VideoStatusMessages.Caption.value.format(url=url)),
+            width=info["width"],
+            height=info["height"],
+            duration=duration,
+            thumbnail=thumb_input
+        )
+
+        if sent_msg and sent_msg.video:
+            await cache_video(
+                url=f"{url}#{quality}",
+                file_id=sent_msg.video.file_id,
+                width=info.get("width", 0),
+                height=info.get("height", 0),
+                duration=duration,
+                format_id=info.get("format_id"),
+                resolution=f"{info.get('width', 0)}x{info.get('height', 0)}",
+                filesize=info.get("filesize"),
+                vcodec=info.get("vcodec"),
+                acodec=info.get("acodec"),
+                ext=info.get("ext", "mp4")
+            )
+        
+        if info.get("thumbnail") and os.path.exists(info["thumbnail"]):
+            try:
+                os.remove(info["thumbnail"])
+            except:
+                pass
+    except Exception as e:
+        logging.exception(f"Quality download failed: {e}")
+        await msg.edit_text(VideoStatusMessages.VideoError.value.format(url=url))
+    else:
+        await msg.delete()
 
 
 @router.message(Command("stats"))

@@ -313,7 +313,12 @@ async def download_video(msg: types.Message, url: str, quality: str = '720'):
                     "width": width,
                     "height": height,
                     "duration": duration,
-                    "thumbnail": str(thumb_path) if (thumb_path and thumb_path.exists()) else None
+                    "thumbnail": str(thumb_path) if (thumb_path and thumb_path.exists()) else None,
+                    "format_id": info.get("format_id"),
+                    "filesize": file_path.stat().st_size if file_path.exists() else info.get("filesize"),
+                    "vcodec": info.get("vcodec"),
+                    "acodec": info.get("acodec"),
+                    "ext": file_path.suffix.lstrip(".") or info.get("ext", "mp4"),
                 }
         finally:
             if tmp_cookies:
@@ -328,5 +333,10 @@ async def download_video(msg: types.Message, url: str, quality: str = '720'):
         "width": info["width"],
         "height": info["height"],
         "duration": info.get("duration", 0),
-        "thumbnail": info.get("thumbnail")
+        "thumbnail": info.get("thumbnail"),
+        "format_id": info.get("format_id"),
+        "filesize": info.get("filesize"),
+        "vcodec": info.get("vcodec"),
+        "acodec": info.get("acodec"),
+        "ext": info.get("ext", "mp4"),
     }

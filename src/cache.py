@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import redis.asyncio as aioredis
-from typing import Optional
+from typing import Optional, Dict, Any
 
 redis_client: Optional[aioredis.Redis] = None
 
@@ -29,7 +29,7 @@ def get_redis() -> Optional[aioredis.Redis]:
     return redis_client
 
 async def get_cached_video(url: str) -> Optional[dict]:
-    """Returns cached file_id and metadata if exists."""
+    """Returns cached video data (file_id, format, resolution, etc.) if exists."""
     r = get_redis()
     if not r:
         return None
@@ -41,8 +41,23 @@ async def get_cached_video(url: str) -> Optional[dict]:
         logging.warning(f"Redis get error: {e}")
     return None
 
-async def cache_video(url: str, file_id: str, width: int = 0, height: int = 0, duration: int = 0):
-    """Caches telegram file_id for 7 days."""
+async def cache_video(
+    url: str,
+    file_id: str,
+    width: int = 0,
+    height: int = 0,
+    duration: int = 0,
+    format_id: Optional[str] = None,
+    resolution: Optional[str] = None,
+    filesize: Optional[int] = None,
+    vcodec: Optional[str] = None,
+    acodec: Optional[str] = None,
+    ext: Optional[str] = None
+):
+    """
+    Caches telegram file_id AND complete video format metadata for 7 days.
+    This ensures effortless migrations and instant responses across bot instances.
+    """
     r = get_redis()
     if not r:
         return
@@ -51,7 +66,13 @@ async def cache_video(url: str, file_id: str, width: int = 0, height: int = 0, d
             "file_id": file_id,
             "width": width,
             "height": height,
-            "duration": duration
+            "duration": duration,
+            "format_id": format_id,
+            "resolution": resolution or f"{width}x{height}",
+            "filesize": filesize,
+            "vcodec": vcodec,
+            "acodec": acodec,
+            "ext": ext or "mp4",
         })
         # Cache for 7 days
         await r.setex(f"vid:{url}", 7 * 24 * 3600, val)
