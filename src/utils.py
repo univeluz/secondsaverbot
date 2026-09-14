@@ -213,11 +213,25 @@ async def download_video(msg: types.Message, url: str, quality: str = '720'):
         else:
             proxy_url = os.getenv("PROXY_URL") or os.getenv("WARP_PROXY", "socks5://warp:9091")
 
-        # Format selector based on user preference or duration
+        # Format selector based on quality
+        # Ensures 360p merges separate video+audio when pre-muxed 18 is absent!
         if quality == "360":
-            format_selector = "18/b[height<=360][ext=mp4]/best[height<=360]/best"
+            format_selector = (
+                "18/"
+                "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/"
+                "bestvideo[height<=360]+bestaudio/"
+                "b[height<=360][ext=mp4]/"
+                "best[height<=360]/"
+                "best"
+            )
         elif quality == "480":
-            format_selector = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]/18/best"
+            format_selector = (
+                "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/"
+                "bestvideo[height<=480]+bestaudio/"
+                "best[height<=480]/"
+                "18/"
+                "best"
+            )
         else:
             format_selector = (
                 "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
