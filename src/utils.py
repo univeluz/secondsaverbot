@@ -354,3 +354,92 @@ async def download_video(msg: types.Message, url: str, quality: str = '720'):
         "acodec": info.get("acodec"),
         "ext": info.get("ext", "mp4"),
     }
+
+
+async def download_audio(msg: types.Message, url: str):
+    loop = asyncio.get_running_loop()
+    last_update = [0.0]
+    progress = [0.0]
+
+    async def update_progress() -> None:
+        await msg.edit_text(format_message(ProgressState.AUDIO_DOWNLOADING, progress[0]))
+
+    def progress_hook(data):
+        if data["status"] != "downloading":
+            return
+        progress[0] = get_percentage(data)
+        now = loop.time()
+        if now - last_update[0] < 1:
+            return
+        last_update[0] = now
+        asyncio.run_coroutine_threadsafe(update_progress(), loop)
+
+    def download():
+        import tempfile
+        audio_id = str(uuid.uuid4())
+        is_instagram = "instagram.com" in url.lower()
+        proxy_url = None if is_instagram else (os.getenv("PROXY_URL") or os.getenv("WARP_PROXY", "socks5://warp:9091"))
+
+        # Best pristine audio stream (m4a/aac or mp3) without quality loss
+        options = {
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "outtmpl": str(VIDEOS_DIR / f"{audio_id}.%(ext)s"),
+            "noplaylist": True,
+            "proxy": proxy_url,
+            "js_runtimes": {"quickjs": {"path": "/usr/bin/qjs"}} if shutil.which("qjs") else {},
+            "concurrent_fragment_downloads": 16,
+            "http_chunk_size": 10 * 1024 * 1024,
+            "buffersize": 16 * 1024 * 1024,
+            "writethumbnail": True,
+            "progress_hooks": [progress_hook],
+            "postprocessors": [],
+        }
+
+        tmp_cookies = None
+        if not is_instagram and COOKIES_FILE.exists() and COOKIES_FILE.is_file() and COOKIES_FILE.stat().st_size > 10:
+            cookie_text = COOKIES_FILE.read_text(encoding="utf-8").strip()
+            if "# Netscape" in cookie_text or "\t" in cookie_text:
+                tmp_cookies = tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8")
+                tmp_cookies.write(cookie_text + "\n")
+                tmp_cookies.flush()
+                tmp_cookies.close()
+                options["cookiefile"] = tmp_cookies.name
+
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=True)
+                downloaded_file = ydl.prepare_filename(info)
+                file_path = Path(downloaded_file)
+
+                # Thumbnail for audio cover
+                thumb_path = None
+                for ext in [".jpg", ".webp", ".png", ".jpeg"]:
+                    tp = file_path.with_suffix(ext)
+                    if tp.exists() and tp.stat().st_size > 0:
+                        thumb_path = tp
+                        break
+
+                if thumb_path and thumb_path.exists() and thumb_path.suffix.lower() == ".webp":
+                    jpg_path = thumb_path.with_suffix(".jpg")
+                    subprocess.run(["ffmpeg", "-y", "-i", str(thumb_path), str(jpg_path)], capture_output=True)
+                    if jpg_path.exists() and jpg_path.stat().st_size > 0:
+                        thumb_path.unlink(missing_ok=True)
+                        thumb_path = jpg_path
+
+                return {
+                    "filename": str(file_path),
+                    "duration": int(float(info.get("duration", 0) or 0)),
+                    "title": info.get("title") or "Audio",
+                    "performer": info.get("uploader") or info.get("channel") or info.get("artist") or "Second Saver",
+                    "thumbnail": str(thumb_path) if (thumb_path and thumb_path.exists()) else None,
+                    "filesize": file_path.stat().st_size if file_path.exists() else info.get("filesize"),
+                    "format_id": info.get("format_id"),
+                    "ext": file_path.suffix.lstrip(".") or "m4a",
+                }
+        finally:
+            if tmp_cookies:
+                Path(tmp_cookies.name).unlink(missing_ok=True)
+
+    info = await loop.run_in_executor(None, download)
+    await msg.edit_text(format_message(ProgressState.FINALIZING))
+    return info

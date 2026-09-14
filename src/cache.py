@@ -28,25 +28,28 @@ def get_redis() -> Optional[aioredis.Redis]:
             redis_client = None
     return redis_client
 
-async def get_cached_video(url: str) -> Optional[dict]:
-    """Returns cached video data (file_id, format, resolution, etc.) if exists."""
+async def get_cached_media(key: str) -> Optional[dict]:
+    """Returns cached media dict if exists."""
     r = get_redis()
     if not r:
         return None
     try:
-        data = await r.get(f"vid:{url}")
+        data = await r.get(f"media:{key}")
         if data:
             return json.loads(data)
     except Exception as e:
         logging.warning(f"Redis get error: {e}")
     return None
 
-async def cache_video(
-    url: str,
+async def cache_media(
+    key: str,
     file_id: str,
+    media_type: str = "video", # video or audio
     width: int = 0,
     height: int = 0,
     duration: int = 0,
+    title: Optional[str] = None,
+    performer: Optional[str] = None,
     format_id: Optional[str] = None,
     resolution: Optional[str] = None,
     filesize: Optional[int] = None,
@@ -54,27 +57,33 @@ async def cache_video(
     acodec: Optional[str] = None,
     ext: Optional[str] = None
 ):
-    """
-    Caches telegram file_id AND complete video format metadata for 7 days.
-    This ensures effortless migrations and instant responses across bot instances.
-    """
+    """Caches telegram file_id + all metadata for 7 days."""
     r = get_redis()
     if not r:
         return
     try:
         val = json.dumps({
             "file_id": file_id,
+            "media_type": media_type,
             "width": width,
             "height": height,
             "duration": duration,
+            "title": title,
+            "performer": performer,
             "format_id": format_id,
-            "resolution": resolution or f"{width}x{height}",
+            "resolution": resolution or (f"{width}x{height}" if width else None),
             "filesize": filesize,
             "vcodec": vcodec,
             "acodec": acodec,
-            "ext": ext or "mp4",
+            "ext": ext or ("mp4" if media_type == "video" else "m4a"),
         })
-        # Cache for 7 days
-        await r.setex(f"vid:{url}", 7 * 24 * 3600, val)
+        await r.setex(f"media:{key}", 7 * 24 * 3600, val)
     except Exception as e:
         logging.warning(f"Redis set error: {e}")
+
+# Backward compatibility wrappers
+async def get_cached_video(url: str):
+    return await get_cached_media(url)
+
+async def cache_video(url: str, **kwargs):
+    await cache_media(key=url, media_type="video", **kwargs)
