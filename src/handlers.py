@@ -72,7 +72,7 @@ async def handle_standart_download(message: types.Message):
             )
     except Exception as e:
         logging.exception(f"Download failed: {e}")
-        await message.answer(VideoStatusMessages.VideoError.value)
+        await message.answer(VideoStatusMessages.VideoError.value.format(url=url))
     else:
         await msg.delete()
         await message.delete()

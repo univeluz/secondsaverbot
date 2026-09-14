@@ -14,7 +14,7 @@ RUN apt-get update \
         ffmpeg \
         nodejs \
         nodejs \
-        fonts-roboto \
+        fonts-roboto quickjs \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------- Poetry ----------

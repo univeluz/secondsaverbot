@@ -5,6 +5,8 @@ class Links(Enum):
     STANDART = [
         # YouTube
         "https://www.youtube.com/",
+        "https://youtube.com/",
+        "https://m.youtube.com/",
         "https://youtu.be/",
         "https://www.youtube.com/shorts/",
         "https://youtube.com/shorts/",

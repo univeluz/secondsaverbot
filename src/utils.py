@@ -207,26 +207,39 @@ async def download_video(msg: types.Message, url: str):
 
         video_id = str(uuid.uuid4())
 
+        is_instagram = "instagram.com" in url.lower()
+        if is_instagram:
+            proxy_url = None
+        else:
+            proxy_url = os.getenv("PROXY_URL") or os.getenv("WARP_PROXY", "socks5://warp:9091")
+
+        # Format priority: 720p -> 480p -> 360p -> best
+        # mp4 format prioritized for instant playback without transcode
+        format_selector = (
+            "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
+            "best[height<=720][ext=mp4]/"
+            "bestvideo[height<=720]+bestaudio/"
+            "best[height<=720]/"
+            "18/"
+            "best"
+        )
+
         options = {
-            # Best video + audio merged into mp4, or single best format converted to mp4
-            "format": "bestvideo+bestaudio/best",
+            "format": format_selector,
             "merge_output_format": "mp4",
             "outtmpl": str(VIDEOS_DIR / f"{video_id}.%(ext)s"),
             "noplaylist": True,
-            "concurrent_fragment_downloads": 4,
+            "proxy": proxy_url,
+            "js_runtimes": {"quickjs": {"path": "/usr/bin/qjs"}} if shutil.which("qjs") else {},
+            "concurrent_fragment_downloads": 10,
             "writethumbnail": True,
             "progress_hooks": [progress_hook],
-            "postprocessors": [
-                {
-                    "key": "FFmpegVideoConvertor",
-                    "preferedformat": "mp4",
-                }
-            ],
+            "postprocessors": [],
         }
 
         # Copy cookies to a writable temp file if valid Netscape format
         tmp_cookies = None
-        if COOKIES_FILE.exists() and COOKIES_FILE.is_file() and COOKIES_FILE.stat().st_size > 10:
+        if not is_instagram and COOKIES_FILE.exists() and COOKIES_FILE.is_file() and COOKIES_FILE.stat().st_size > 10:
             cookie_text = COOKIES_FILE.read_text(encoding="utf-8").strip()
             if "# Netscape" in cookie_text or "\t" in cookie_text:
                 tmp_cookies = tempfile.NamedTemporaryFile(
@@ -258,40 +271,43 @@ async def download_video(msg: types.Message, url: str):
                 duration = meta["duration"] or yt_duration
 
                 thumb_path = None
+                # Check if yt-dlp downloaded thumbnail
                 for ext in [".jpg", ".webp", ".png", ".jpeg"]:
                     tp = file_path.with_suffix(ext)
-                    if tp.exists():
+                    if tp.exists() and tp.stat().st_size > 0:
                         thumb_path = tp
                         break
-                
-                if not thumb_path:
-                    thumb_path = file_path.with_suffix(".jpg")
-                    subprocess.run([
-                        "ffmpeg", "-y", "-i", str(file_path),
-                        "-ss", "00:00:02.000", "-vframes", "1", str(thumb_path)
-                    ], capture_output=True)
-                    
-                    if not thumb_path.exists() or thumb_path.stat().st_size == 0:
-                        subprocess.run([
-                            "ffmpeg", "-y", "-i", str(file_path),
-                            "-vframes", "1", str(thumb_path)
-                        ], capture_output=True)
 
+                # If webp, convert to jpg for Telegram preview support
                 if thumb_path and thumb_path.exists() and thumb_path.suffix.lower() == ".webp":
                     jpg_path = thumb_path.with_suffix(".jpg")
                     subprocess.run([
                         "ffmpeg", "-y", "-i", str(thumb_path), str(jpg_path)
                     ], capture_output=True)
-                    if jpg_path.exists():
-                        thumb_path.unlink()
+                    if jpg_path.exists() and jpg_path.stat().st_size > 0:
+                        thumb_path.unlink(missing_ok=True)
                         thumb_path = jpg_path
+
+                # If no thumbnail yet, generate directly from video file via ffmpeg (<0.1s)
+                if not thumb_path or not thumb_path.exists():
+                    gen_thumb = file_path.with_suffix(".jpg")
+                    seek_time = "00:00:01.000" if duration > 2 else "00:00:00.000"
+                    try:
+                        subprocess.run([
+                            "ffmpeg", "-y", "-ss", seek_time, "-i", str(file_path),
+                            "-vframes", "1", "-q:v", "2", str(gen_thumb)
+                        ], capture_output=True, timeout=3)
+                        if gen_thumb.exists() and gen_thumb.stat().st_size > 0:
+                            thumb_path = gen_thumb
+                    except Exception:
+                        pass
 
                 return {
                     "filename": str(file_path),
                     "width": width,
                     "height": height,
                     "duration": duration,
-                    "thumbnail": str(thumb_path) if thumb_path.exists() else None
+                    "thumbnail": str(thumb_path) if (thumb_path and thumb_path.exists()) else None
                 }
         finally:
             if tmp_cookies:
