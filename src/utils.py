@@ -160,7 +160,7 @@ async def download_tiktok_video(msg: types.Message, url: str):
     }
 
 
-async def download_video(msg: types.Message, url: str):
+async def download_video(msg: types.Message, url: str, quality: str = '720'):
     if "tiktok.com" in url.lower():
         return await download_tiktok_video(msg, url)
 
@@ -213,16 +213,20 @@ async def download_video(msg: types.Message, url: str):
         else:
             proxy_url = os.getenv("PROXY_URL") or os.getenv("WARP_PROXY", "socks5://warp:9091")
 
-        # Format priority: 720p -> 480p -> 360p -> best
-        # mp4 format prioritized for instant playback without transcode
-        format_selector = (
-            "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
-            "best[height<=720][ext=mp4]/"
-            "bestvideo[height<=720]+bestaudio/"
-            "best[height<=720]/"
-            "18/"
-            "best"
-        )
+        # Format selector based on user preference or duration
+        if quality == "360":
+            format_selector = "18/b[height<=360][ext=mp4]/best[height<=360]/best"
+        elif quality == "480":
+            format_selector = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]/18/best"
+        else:
+            format_selector = (
+                "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
+                "best[height<=720][ext=mp4]/"
+                "bestvideo[height<=720]+bestaudio/"
+                "best[height<=720]/"
+                "18/"
+                "best"
+            )
 
         options = {
             "format": format_selector,

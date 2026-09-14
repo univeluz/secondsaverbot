@@ -1,3 +1,4 @@
+from cache import get_cached_video, cache_video
 import logging
 import os
 import shutil
@@ -29,6 +30,21 @@ async def handle_standart_download(message: types.Message):
     msg = await message.answer(format_message(ProgressState.PREPARING))
 
     try:
+        # 1. Check Redis cache for instant 0.5s response
+        cached = await get_cached_video(url)
+        if cached and cached.get("file_id"):
+            await message.answer_video(
+                video=cached["file_id"],
+                caption=(VideoStatusMessages.Caption.value.format(url=url)),
+                width=cached.get("width", 0),
+                height=cached.get("height", 0),
+                duration=cached.get("duration", 0),
+            )
+            await msg.delete()
+            await message.delete()
+            return
+
+        # 2. Fresh download
         info = await download_video(msg, url)
         filename = info["filename"]
         duration = info.get("duration", 0)
@@ -47,9 +63,10 @@ async def handle_standart_download(message: types.Message):
                     )
                 )
                 return
-            video_input = types.FSInputFile(filename)
+            # Use 4MB chunk size for ultra-fast pipe to local telegram-bot-api
+            video_input = types.FSInputFile(filename, chunk_size=4 * 1024 * 1024)
 
-        await message.answer_video(
+        sent_msg = await message.answer_video(
             video=video_input,
             caption=(VideoStatusMessages.Caption.value.format(url=url)),
             width=info["width"],
@@ -57,6 +74,16 @@ async def handle_standart_download(message: types.Message):
             duration=duration,
             thumbnail=thumb_input
         )
+
+        # 3. Cache the sent video file_id in Redis
+        if sent_msg and sent_msg.video:
+            await cache_video(
+                url=url,
+                file_id=sent_msg.video.file_id,
+                width=info["width"],
+                height=info["height"],
+                duration=duration
+            )
         
         if info.get("thumbnail") and os.path.exists(info["thumbnail"]):
             try:

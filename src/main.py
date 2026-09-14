@@ -5,7 +5,8 @@ import os
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
+from aiogram.client.telegram import TelegramAPIServer, SimpleFilesPathWrapper
+from pathlib import Path
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
@@ -20,7 +21,16 @@ async def run_bot() -> None:
     api_server_url = os.getenv("TELEGRAM_API_SERVER")
 
     if api_server_url:
-        server = TelegramAPIServer.from_base(api_server_url, is_local=True)
+        # Wrap local video files directly into telegram-bot-api volume without HTTP upload latency
+        file_wrapper = SimpleFilesPathWrapper(
+            server_path=Path("/var/lib/telegram-bot-api/videos"),
+            local_path=Path("/app/src/videos")
+        )
+        server = TelegramAPIServer.from_base(
+            api_server_url,
+            is_local=True,
+            wrap_local_file=file_wrapper
+        )
         session = AiohttpSession(api=server)
         logging.info(f"Using local Telegram Bot API server: {api_server_url}")
         bot = Bot(

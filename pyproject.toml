@@ -13,7 +13,8 @@ dependencies = [
     "python-dotenv (>=1.2.2)",
     "yt-dlp (>=2026.7.4)",
     "pillow (>=12.3.0,<13.0.0)",
-    "youthon (>=0.5.0,<0.6.0)"
+    "youthon (>=0.5.0,<0.6.0)",
+    "redis (>=5.0.0)"
 ]
 
 [build-system]

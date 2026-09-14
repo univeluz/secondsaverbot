@@ -20,6 +20,7 @@ services:
       TELEGRAM_STAT: "1"
     volumes:
       - telegram-bot-api-data:/var/lib/telegram-bot-api
+      - videos:/var/lib/telegram-bot-api/videos
 
   youtubedlbot:
     image: youtubedlbot
