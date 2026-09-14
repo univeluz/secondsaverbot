@@ -52,11 +52,11 @@ async def handle_standart_download(message: types.Message):
         # Quick inline keyboard for Quality
         builder = InlineKeyboardBuilder()
         builder.row(
-            InlineKeyboardButton(text="⚡ Tezkor 360p (Kichik hajm)", callback_data=f"dl:360:{url}"),
-            InlineKeyboardButton(text="💎 720p HD (Maksimal)", callback_data=f"dl:720:{url}")
+            InlineKeyboardButton(text="⚡ Tezkor (Trafik tejamkor)", callback_data=f"dl:360:{url}"),
+            InlineKeyboardButton(text="💎 Yuqori sifat (Tiniq)", callback_data=f"dl:720:{url}")
         )
         await message.answer(
-            f"🎬 <b>Video sifatini tanlang:</b>\n<code>{url}</code>",
+            f"🎬 <b>Qaysi ko'rinishda yuklab olmoqchisiz?</b>\n<code>{url}</code>",
             reply_markup=builder.as_markup()
         )
         return
@@ -134,7 +134,7 @@ async def handle_standart_download(message: types.Message):
 async def handle_quality_choice(callback: types.CallbackQuery):
     _, quality, url = callback.data.split(":", 2)
     message = callback.message
-    await callback.answer(f"Tanlandi: {quality}p sifat")
+    await callback.answer("Yuklab olish boshlandi...")
     msg = await message.edit_text(format_message(ProgressState.PREPARING))
 
     try:
